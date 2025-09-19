@@ -1,29 +1,34 @@
-# ---- build PostGIS against the Postgres in this image ----
-FROM timescale/timescaledb:latest-pg17 AS builder
-
-# build deps
-RUN apk add --no-cache --virtual .build-deps \
-      build-base wget tar cmake \
-      geos-dev proj-dev gdal-dev libxml2-dev json-c-dev protobuf-c-dev protobuf-dev
-
-ENV POSTGIS_VER=3.5.0
-WORKDIR /tmp
-RUN wget -q https://download.osgeo.org/postgis/source/postgis-${POSTGIS_VER}.tar.gz \
- && tar xzf postgis-${POSTGIS_VER}.tar.gz \
- && cd postgis-${POSTGIS_VER} \
- && ./configure --with-pgconfig=/usr/local/bin/pg_config \
- && make -j"$(nproc)" \
- && make install
-
-# ---- final image: timescale + (runtime libs) + postgis bits copied in ----
 FROM timescale/timescaledb:latest-pg17
 
-# runtime libs only (no compilers)
-RUN apk add --no-cache geos proj gdal libxml2 json-c protobuf-c
+# Install Alpine's PostGIS and contrib
+RUN apk update && apk add --no-cache \
+    postgis \
+    postgresql17-contrib
 
-# copy the PostGIS artifacts compiled against our PG
-COPY --from=builder /usr/local/lib/postgresql/ /usr/local/lib/postgresql/
-COPY --from=builder /usr/local/share/postgresql/extension/ /usr/local/share/postgresql/extension/
+# Align Alpine's install paths (/usr/...) with this image's PG paths (/usr/local/...)
+RUN set -eux; \
+  src_share=/usr/share/postgresql/extension; dst_share=/usr/local/share/postgresql/extension; \
+  src_lib=/usr/lib/postgresql;            dst_lib=/usr/local/lib/postgresql; \
+  mkdir -p "$dst_share" "$dst_lib"; \
+  # extension control & SQL files
+  for f in postgis* topology* address_standardizer* tiger*; do \
+    if [ -e "$src_share/$f.control" ] || ls "$src_share/$f--"* >/dev/null 2>&1; then \
+      cp -av "$src_share"/$f* "$dst_share"/; \
+    fi; \
+  done; \
+  # shared libraries
+  for f in postgis rtpostgis address_standardizer sfcgal raster; do \
+    if ls "$src_lib"/$f* >/dev/null 2>&1; then \
+      cp -av "$src_lib"/$f* "$dst_lib"/; \
+    fi; \
+  done; \
+  # liblwgeom is needed by PostGIS
+  if ls /usr/lib/liblwgeom* >/dev/null 2>&1; then \
+    cp -av /usr/lib/liblwgeom* /usr/local/lib/; \
+  fi; \
+  # sanity prints
+  ls -l "$dst_share" | head -n 20; \
+  ls -l "$dst_lib"   | head -n 20
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=5 \
   CMD pg_isready -U "$POSTGRES_USER" || exit 1
