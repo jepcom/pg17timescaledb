@@ -11,6 +11,15 @@ Quickstart
 4) Run:
    streamlit run app.py
 
+Docker
+1) Build and start stack (Postgres + MindsDB + app):
+   docker compose up --build -d
+2) App at http://localhost:8501, Postgres at localhost:5432, MindsDB at http://localhost:47334
+3) Container aliases (internal network):
+   - pgvector: Postgres with pgvector
+   - missen: MindsDB service alias
+4) Env overrides via .env (OPENAI_API_KEY etc.)
+
 Configuration
 Create .streamlit/secrets.toml with:
 

@@ -1,0 +1,61 @@
+version: '3.9'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: pgvector
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=analytics
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - pgvector
+
+  mindsdb:
+    image: mindsdb/mindsdb:latest
+    container_name: missen
+    environment:
+      - MINDSDB_HOST=0.0.0.0
+      - MINDSDB_PORT=47334
+    ports:
+      - "47334:47334"
+    networks:
+      default:
+        aliases:
+          - missen
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: analyst-notebook
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=analytics
+      - DB_SSLMODE=disable
+      - VECTOR_DIM=1536
+    depends_on:
+      - db
+    ports:
+      - "8501:8501"
+    networks:
+      default:
+        aliases:
+          - app
+
+volumes:
+  db_data:
+
+networks:
+  default:
+    name: analyst-net
